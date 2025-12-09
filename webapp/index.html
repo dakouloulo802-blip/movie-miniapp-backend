@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Movie Downloader — MiniApp</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:0;background:#0f1720;color:#e6eef8}
+    header{background:#0b1220;padding:14px;border-bottom:1px solid rgba(255,255,255,.04)}
+    .wrap{max-width:900px;margin:18px auto;padding:0 12px}
+    .movies{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+    .card{background:#071027;border-radius:8px;padding:10px;box-shadow:0 6px 18px rgba(2,6,23,.6)}
+    img.poster{width:100%;height:230px;object-fit:cover;border-radius:6px}
+    .title{font-weight:700;margin:8px 0 4px}
+    button.primary{background:#1f7efd;color:white;border:0;padding:8px 10px;border-radius:6px;cursor:pointer}
+    .center{display:flex;align-items:center;gap:8px}
+    .banner-slot{background:#071027;padding:8px;border-radius:6px;margin:10px 0;text-align:center}
+    .locked-note{color:#c7d2fe;font-size:13px;margin-top:6px}
+    .hidden{display:none}
+  </style>
+</head>
+<body>
+  <header><div class="wrap"><strong>Movie Downloader</strong></div></header>
+  <main class="wrap">
+    <div id="ads-top" class="banner-slot">Banner (Adsterra placeholder)</div>
+
+    <section id="listView">
+      <h3>Available movies</h3>
+      <div id="movies" class="movies"></div>
+    </section>
+
+    <section id="detailView" class="hidden">
+      <button id="backBtn" class="primary">← Back</button>
+      <div style="margin-top:12px" id="movieDetail"></div>
+      <div id="downloadArea" style="margin-top:12px"></div>
+      <div id="ads-bottom" class="banner-slot">Banner (Adsterra placeholder)</div>
+    </section>
+
+    <div id="status" style="margin-top:14px;color:#99a8c7"></div>
+  </main>
+
+  <script>
+  // --- CONFIG (replace placeholders) ---
+  const API_BASE = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? 'http://127.0.0.1:3000' : 'https://your-production-backend.example.com';
+  // Monetag placeholders:
+  const MONETAG_PUBLISHER = 'MONETAG_PUBLISHER_ID_OR_SNIPPET';
+  const ADSTERRA_BANNER_PLACEHOLDER = '<!-- paste Adsterra banner snippet here -->';
+  // ----------------------------------------------------------------------------
+
+  // Telegram WebApp init
+  const tg = window.Telegram ? window.Telegram.WebApp : null;
+  let telegramUser = { id: 'guest' };
+  try {
+    if (tg) {
+      tg.expand(); // optional
+      telegramUser = tg.initDataUnsafe && tg.initDataUnsafe.user ? tg.initDataUnsafe.user : telegramUser;
+    } else {
+      // Fallback for browser testing: store fake user
+      telegramUser.id = localStorage.getItem('fake_user_id') || 'testuser_' + Math.floor(Math.random()*10000);
+      localStorage.setItem('fake_user_id', telegramUser.id);
+    }
+  } catch(e){ console.warn('tg init', e) }
+
+  // UI helpers
+  const el = id => document.getElementById(id);
+  const setStatus = txt => el('status').textContent = txt || '';
+
+  // Fetch movie list
+  async function loadMovies(){
+    setStatus('Loading movies…');
+    try {
+      const r = await fetch(API_BASE + '/movies');
+      if (!r.ok) throw new Error('Failed to fetch movies');
+      const movies = await r.json();
+      renderMovies(movies);
+      setStatus('');
+    } catch(err){
+      setStatus('Failed to load movies — ' + err.message);
+    }
+  }
+
+  function renderMovies(movies){
+    const container = el('movies'); container.innerHTML = '';
+    if (!movies || movies.length === 0) { container.innerHTML = '<div>No movies published yet.</div>'; return; }
+    movies.forEach(m=>{
+      const d = document.createElement('div'); d.className='card';
+      d.innerHTML = `
+        <img class="poster" src="${m.poster_url || ''}" alt="${m.title||''}">
+        <div class="title">${escapeHtml(m.title||'Untitled')}</div>
+        <div class="center"><div>${m.year||''}</div><button data-id="${m.tmdb_id}" class="primary" style="margin-left:auto">Open</button></div>
+      `;
+      container.appendChild(d);
+    });
+    // attach handlers
+    container.querySelectorAll('button.primary').forEach(btn=>{
+      btn.addEventListener('click', ()=> openMovie(btn.dataset.id));
+    });
+  }
+
+  function escapeHtml(s){ return String(s||'').replace(/[&<>"]/g,c=>({ '&':'&amp;', '<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+  // Open movie detail
+  async function openMovie(tmdb_id){
+    el('listView').classList.add('hidden'); el('detailView').classList.remove('hidden');
+    setStatus('Loading movie…');
+    try {
+      const r = await fetch(API_BASE + '/movie/' + tmdb_id);
+      if (!r.ok) {
+        const data = await r.json().catch(()=>({error:'unknown'}));
+        throw new Error(data.error||'not found');
+      }
+      const m = await r.json();
+      renderDetail(m);
+      setStatus('');
+    } catch(err){
+      setStatus('Failed to load movie — ' + err.message);
+    }
+  }
+
+  function renderDetail(m){
+    const md = el('movieDetail');
+    md.innerHTML = `
+      <div class="card" style="padding:12px">
+        <img class="poster" src="${m.poster_url||''}" alt="${m.title||''}">
+        <div class="title">${escapeHtml(m.title)} (${m.year||''})</div>
+        <div style="margin-top:8px">${escapeHtml(m.overview||'')}</div>
+      </div>
+    `;
+    // Download area: locked button
+    const da = el('downloadArea'); da.innerHTML = '';
+    const btn = document.createElement('button'); btn.className='primary'; btn.textContent='Unlock Download';
+    btn.onclick = ()=> attemptUnlock(m.tmdb_id);
+    da.appendChild(btn);
+    const note = document.createElement('div'); note.className='locked-note';
+    note.innerText = 'Unlock to reveal download links. Free daily unlocks available; otherwise watch an ad.';
+    da.appendChild(note);
+  }
+
+  // Attempt unlock: contact backend to get token (server enforces quota)
+  async function attemptUnlock(tmdb_id){
+    setStatus('Requesting unlock token…');
+    try {
+      const payload = { userId: String(telegramUser.id) }; // server expects userId
+      const r = await fetch(API_BASE + '/unlock/' + tmdb_id, {
+        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
+      });
+      const data = await r.json();
+      if (r.status === 200 && data.ok && data.token) {
+        setStatus('Unlocked (using free quota). Fetching links…');
+        return await validateTokenAndShow(tmdb_id, data.token);
+      }
+      if (r.status === 402 && data.requireInterstitial) {
+        // server asks to show interstitial ad or rewarded — show Monetag rewarded when available
+        const proceed = confirm('You reached free quota. Watch a short ad to unlock?'); // placeholder for dev
+        if (!proceed) { setStatus('Unlock cancelled'); return; }
+        // TODO: Replace below simulated ad with Monetag SDK call
+        await simulateRewardedAd();
+        // After ad success call unlock with adSuccess
+        const adResp = await fetch(API_BASE + '/unlock/' + tmdb_id, {
+          method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: String(telegramUser.id), adSuccess:true, adType:'rewarded' })
+        });
+        const adData = await adResp.json();
+        if (adResp.ok && adData.ok && adData.token) return await validateTokenAndShow(tmdb_id, adData.token);
+        throw new Error(adData.error || 'unlock failed after ad');
+      }
+      throw new Error(data.error || 'unlock failed');
+    } catch(err){
+      setStatus('Unlock error: ' + err.message);
+    }
+  }
+
+  async function validateTokenAndShow(tmdb_id, token){
+    setStatus('Validating unlock token…');
+    const r = await fetch(API_BASE + '/validate-unlock/' + tmdb_id, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error||'validate failed');
+    showLinks(d.links||[]);
+    setStatus('Download links revealed');
+  }
+
+  function showLinks(links){
+    const da = el('downloadArea'); da.innerHTML = '';
+    links.forEach(l=>{
+      const a = document.createElement('a'); a.href = l.url; a.target = '_blank';
+      a.className='primary'; a.style.display='inline-block'; a.style.margin='6px 6px 0 0'; a.textContent = l.label || 'Download';
+      da.appendChild(a);
+    });
+    // bonus banner slot for adsterra reward/banner
+    const b = document.createElement('div'); b.className='banner-slot'; b.innerHTML = ADSTERRA_BANNER_PLACEHOLDER;
+    da.appendChild(b);
+  }
+
+  // Simulated rewarded ad (temporary). Replace with Monetag SDK integration.
+  async function simulateRewardedAd(){
+    setStatus('Playing rewarded ad (simulated)…');
+    await new Promise(r=>setTimeout(r, 1800)); // 1.8s fake ad
+    setStatus('Ad shown (simulated)');
+    return true;
+  }
+
+  // Back button
+  el('backBtn').addEventListener('click', ()=> {
+    el('detailView').classList.add('hidden');
+    el('listView').classList.remove('hidden');
+    setStatus('');
+  });
+
+  // Load initial UI
+  loadMovies();
+
+  // Placeholders where you will paste vendor SDKs (Monetag / Adsterra)
+  // Monetag: place the Monetag SDK snippet here and call its rewarded-interstitial API where simulateRewardedAd is used.
+  // Adsterra: paste banner snippets into ADSTERRA_BANNER_PLACEHOLDER string at top of file.
+
+  </script>
+</body>
+</html>
