@@ -27,9 +27,18 @@ if (process.env.SERVICE_ACCOUNT_JSON) {
   });
   firebaseInitialized = true;
 } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-  // local file path (development)
-  admin.initializeApp();
-  firebaseInitialized = true;
+  // local file path - load explicitly with absolute path
+  const fs = require('fs');
+  const credPath = path.resolve(__dirname, process.env.GOOGLE_APPLICATION_CREDENTIALS);
+  try {
+    const sa = JSON.parse(fs.readFileSync(credPath, 'utf8'));
+    admin.initializeApp({
+      credential: admin.credential.cert(sa)
+    });
+    firebaseInitialized = true;
+  } catch(e) {
+    console.error('Failed to load service account from', credPath, e.message);
+  }
 } else {
   console.warn('WARNING: No Firebase credentials found in env. Expect failures if Firestore is used.');
   // Attempt default initialize (may fail)
