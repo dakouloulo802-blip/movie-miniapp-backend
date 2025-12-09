@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Movie Downloader — MiniApp</title>
+  <title>Movie Downloader — MiniApp (fixed)</title>
   <style>
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:0;background:#0f1720;color:#e6eef8}
     header{background:#0b1220;padding:14px;border-bottom:1px solid rgba(255,255,255,.04)}
@@ -30,7 +30,7 @@
     </section>
 
     <section id="detailView" class="hidden">
-      <button id="backBtn" class="primary">← Back</button>
+      <button id="backBtn" class="primary">&larr; Back</button>
       <div style="margin-top:12px" id="movieDetail"></div>
       <div id="downloadArea" style="margin-top:12px"></div>
       <div id="ads-bottom" class="banner-slot">Banner (Adsterra placeholder)</div>
@@ -41,23 +41,27 @@
 
   <script>
   // --- CONFIG (replace placeholders) ---
-  // If running where the backend serves the frontend, use relative path.
-  // If frontend is on Vercel, we will set the absolute URL there.
-  const API_BASE = "https://e9c18577-60c5-41bc-9244-4899d9257536-00-qef4ku1r399w.sisko.replit.dev/";
-  // Monetag placeholders:
+  // Set your Replit backend here. No trailing slash needed, the helper will normalize.
+  const API_BASE = "https://e9c18577-60c5-41bc-9244-4899d9257536-00-qef4ku1r399w.sisko.replit.dev";
   const MONETAG_PUBLISHER = 'MONETAG_PUBLISHER_ID_OR_SNIPPET';
   const ADSTERRA_BANNER_PLACEHOLDER = '<!-- paste Adsterra banner snippet here -->';
   // ----------------------------------------------------------------------------
+
+  // small helper to join paths without accidental double slashes
+  function api(path){
+    const base = String(API_BASE || '').replace(/\/+$/, '');
+    const p = String(path || '').replace(/^\/+/, '');
+    return base + '/' + p;
+  }
 
   // Telegram WebApp init
   const tg = window.Telegram ? window.Telegram.WebApp : null;
   let telegramUser = { id: 'guest' };
   try {
     if (tg) {
-      tg.expand(); // optional
+      tg.expand();
       telegramUser = tg.initDataUnsafe && tg.initDataUnsafe.user ? tg.initDataUnsafe.user : telegramUser;
     } else {
-      // Fallback for browser testing: store fake user
       telegramUser.id = localStorage.getItem('fake_user_id') || 'testuser_' + Math.floor(Math.random()*10000);
       localStorage.setItem('fake_user_id', telegramUser.id);
     }
@@ -69,15 +73,16 @@
 
   // Fetch movie list
   async function loadMovies(){
-    setStatus('Loading movies…');
+    setStatus('Loading movies...');
     try {
-      const r = await fetch(API_BASE + '/movies');
-      if (!r.ok) throw new Error('Failed to fetch movies');
+      const r = await fetch(api('movies'));
+      if (!r.ok) throw new Error('Failed to fetch movies ' + r.status);
       const movies = await r.json();
       renderMovies(movies);
       setStatus('');
     } catch(err){
       setStatus('Failed to load movies — ' + err.message);
+      console.error('loadMovies error', err);
     }
   }
 
@@ -93,29 +98,29 @@
       `;
       container.appendChild(d);
     });
-    // attach handlers
     container.querySelectorAll('button.primary').forEach(btn=>{
       btn.addEventListener('click', ()=> openMovie(btn.dataset.id));
     });
   }
 
-  function escapeHtml(s){ return String(s||'').replace(/[&<>"]/g,c=>({ '&':'&amp;', '<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+  function escapeHtml(s){ return String(s||'').replace(/[&<>\"]/g,c=>({ '&':'&amp;', '<':'&lt;','>':'&gt;','\"':'&quot;'}[c])); }
 
   // Open movie detail
   async function openMovie(tmdb_id){
     el('listView').classList.add('hidden'); el('detailView').classList.remove('hidden');
-    setStatus('Loading movie…');
+    setStatus('Loading movie...');
     try {
-      const r = await fetch(API_BASE + '/movie/' + tmdb_id);
+      const r = await fetch(api('movie/' + tmdb_id));
       if (!r.ok) {
         const data = await r.json().catch(()=>({error:'unknown'}));
-        throw new Error(data.error||'not found');
+        throw new Error(data.error||('status ' + r.status));
       }
       const m = await r.json();
       renderDetail(m);
       setStatus('');
     } catch(err){
       setStatus('Failed to load movie — ' + err.message);
+      console.error('openMovie error', err);
     }
   }
 
@@ -128,7 +133,6 @@
         <div style="margin-top:8px">${escapeHtml(m.overview||'')}</div>
       </div>
     `;
-    // Download area: locked button
     const da = el('downloadArea'); da.innerHTML = '';
     const btn = document.createElement('button'); btn.className='primary'; btn.textContent='Unlock Download';
     btn.onclick = ()=> attemptUnlock(m.tmdb_id);
@@ -138,46 +142,44 @@
     da.appendChild(note);
   }
 
-  // Attempt unlock: contact backend to get token (server enforces quota)
+  // Attempt unlock
   async function attemptUnlock(tmdb_id){
-    setStatus('Requesting unlock token…');
+    setStatus('Requesting unlock token...');
     try {
-      const payload = { userId: String(telegramUser.id) }; // server expects userId
-      const r = await fetch(API_BASE + '/unlock/' + tmdb_id, {
+      const payload = { userId: String(telegramUser.id) };
+      const r = await fetch(api('unlock/' + tmdb_id), {
         method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
       });
-      const data = await r.json();
+      const data = await r.json().catch(()=>({}));
       if (r.status === 200 && data.ok && data.token) {
-        setStatus('Unlocked (using free quota). Fetching links…');
+        setStatus('Unlocked. Fetching links...');
         return await validateTokenAndShow(tmdb_id, data.token);
       }
       if (r.status === 402 && data.requireInterstitial) {
-        // server asks to show interstitial ad or rewarded — show Monetag rewarded when available
-        const proceed = confirm('You reached free quota. Watch a short ad to unlock?'); // placeholder for dev
+        const proceed = confirm('You reached free quota. Watch a short ad to unlock?');
         if (!proceed) { setStatus('Unlock cancelled'); return; }
-        // TODO: Replace below simulated ad with Monetag SDK call
         await simulateRewardedAd();
-        // After ad success call unlock with adSuccess
-        const adResp = await fetch(API_BASE + '/unlock/' + tmdb_id, {
+        const adResp = await fetch(api('unlock/' + tmdb_id), {
           method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: String(telegramUser.id), adSuccess:true, adType:'rewarded' })
         });
-        const adData = await adResp.json();
+        const adData = await adResp.json().catch(()=>({}));
         if (adResp.ok && adData.ok && adData.token) return await validateTokenAndShow(tmdb_id, adData.token);
         throw new Error(adData.error || 'unlock failed after ad');
       }
       throw new Error(data.error || 'unlock failed');
     } catch(err){
       setStatus('Unlock error: ' + err.message);
+      console.error('attemptUnlock error', err);
     }
   }
 
   async function validateTokenAndShow(tmdb_id, token){
-    setStatus('Validating unlock token…');
-    const r = await fetch(API_BASE + '/validate-unlock/' + tmdb_id, {
+    setStatus('Validating unlock token...');
+    const r = await fetch(api('validate-unlock/' + tmdb_id), {
       method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token })
     });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error||'validate failed');
+    const d = await r.json().catch(()=>({}));
+    if (!r.ok) throw new Error(d.error||('status ' + r.status));
     showLinks(d.links||[]);
     setStatus('Download links revealed');
   }
@@ -189,15 +191,13 @@
       a.className='primary'; a.style.display='inline-block'; a.style.margin='6px 6px 0 0'; a.textContent = l.label || 'Download';
       da.appendChild(a);
     });
-    // bonus banner slot for adsterra reward/banner
     const b = document.createElement('div'); b.className='banner-slot'; b.innerHTML = ADSTERRA_BANNER_PLACEHOLDER;
     da.appendChild(b);
   }
 
-  // Simulated rewarded ad (temporary). Replace with Monetag SDK integration.
   async function simulateRewardedAd(){
-    setStatus('Playing rewarded ad (simulated)…');
-    await new Promise(r=>setTimeout(r, 1800)); // 1.8s fake ad
+    setStatus('Playing rewarded ad (simulated)...');
+    await new Promise(r=>setTimeout(r, 1800));
     setStatus('Ad shown (simulated)');
     return true;
   }
@@ -212,9 +212,10 @@
   // Load initial UI
   loadMovies();
 
-  // Placeholders where you will paste vendor SDKs (Monetag / Adsterra)
-  // Monetag: place the Monetag SDK snippet here and call its rewarded-interstitial API where simulateRewardedAd is used.
-  // Adsterra: paste banner snippets into ADSTERRA_BANNER_PLACEHOLDER string at top of file.
+  // Notes for deployment
+  // 1) Make sure this file is deployed to Vercel.
+  // 2) If you still see old UI in Telegram, open the app with a cache bust query param like ?v=2
+  // 3) When ready replace simulateRewardedAd with Monetag SDK calls.
 
   </script>
 </body>
