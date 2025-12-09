@@ -8,8 +8,13 @@ const { google } = require('googleapis');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
 
+const path = require('path');
+
 const app = express();
 app.use(bodyParser.json());
+
+// Serve static files from webapp directory
+app.use(express.static(path.join(__dirname, 'webapp')));
 
 // Initialize Firebase Admin (support serviceAccount JSON via env or local file)
 let firebaseInitialized = false;
@@ -319,5 +324,5 @@ app.post('/validate-unlock/:tmdb_id', async (req, res) => {
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 
-const port = process.env.PORT || 3000;
-app.listen(port, () => console.log('Server listening on', port));
+const port = process.env.PORT || 5000;
+app.listen(port, '0.0.0.0', () => console.log('Server listening on', port));
