@@ -203,11 +203,32 @@ app.get('/sync', requireAdmin, async (req, res) => {
   }
 });
 
+/* Admin endpoint to list all movies including unpublished */
+app.get('/admin/movies', requireAdmin, async (req, res) => {
+  if (!db) return res.status(503).json({ error: 'Database not initialized' });
+  try {
+    const snap = await db.collection('movies').limit(500).get();
+    const out = [];
+    snap.forEach(d => {
+      const data = d.data();
+      out.push({
+        tmdb_id: data.tmdb_id,
+        title: data.title,
+        published: data.published,
+        year: data.year
+      });
+    });
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* Public endpoints */
 app.get('/movies', async (req, res) => {
   if (!db) return res.status(503).json({ error: 'Database not initialized. Check SERVICE_ACCOUNT_JSON secret.' });
   try {
-    const snap = await db.collection('movies').where('published', '==', true).orderBy('title').limit(500).get();
+    const snap = await db.collection('movies').where('published', '==', true).limit(500).get();
     const out = [];
     snap.forEach(d => {
       const data = d.data();
