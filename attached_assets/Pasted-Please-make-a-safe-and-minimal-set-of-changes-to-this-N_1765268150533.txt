@@ -1,0 +1,56 @@
+Please make a safe and minimal set of changes to this Node/Express project so it works with environment secrets and serves the frontend. Do not add or change any secrets. I will add secrets manually later.
+
+Make these exact file edits.
+
+1) server.js
+- Ensure server reads PORT from process.env.PORT or 5000 default.
+- Serve static files from the webapp folder.
+- Load Firebase service account from process.env.SERVICE_ACCOUNT_JSON if present. If not present, fall back to admin.initializeApp() default.
+- Remove any code that loads serviceAccountKey.json from disk or uses GOOGLE_APPLICATION_CREDENTIALS file path.
+- Add CORS middleware with permissive origin for now (app.use(cors())).
+
+Replace or update Firebase init and server listen area with the following snippet:
+
+```js
+// near the top: require these
+const express = require('express');
+const cors = require('cors');
+const admin = require('firebase-admin');
+const path = require('path');
+
+// ... existing code ...
+
+// Initialize Firebase Admin from environment secret if present
+if (process.env.SERVICE_ACCOUNT_JSON) {
+  try {
+    const sa = JSON.parse(process.env.SERVICE_ACCOUNT_JSON);
+    admin.initializeApp({ credential: admin.credential.cert(sa) });
+    console.log('Firebase initialized from SERVICE_ACCOUNT_JSON env');
+  } catch (err) {
+    console.error('Failed to parse SERVICE_ACCOUNT_JSON', err);
+    // do not throw, allow fallback to default if present
+  }
+} else {
+  try {
+    admin.initializeApp();
+    console.log('Firebase initialized with default credentials');
+  } catch (err) {
+    console.warn('Firebase default init failed. Ensure credentials are set.', err);
+  }
+}
+
+// Express setup
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Serve static frontend that lives in webapp/
+const webappPath = path.join(__dirname, 'webapp');
+app.use(express.static(webappPath));
+app.get('/', (req, res) => {
+  res.sendFile(path.join(webappPath, 'index.html'));
+});
+
+// Start server using env PORT or 5000
+const port = Number(process.env.PORT) || 5000;
+app.listen(port, () => console.log(`Server listening on port ${port}`));

@@ -1,52 +1,45 @@
 // server.js - simple Express server for your Movie MiniApp (MVP)
-// NOTE: This is the exact version we discussed earlier. Ensure .env and serviceAccountKey.json exist.
 
-require('dotenv').config();
 const express = require('express');
-const bodyParser = require('body-parser');
+const cors = require('cors');
 const { google } = require('googleapis');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
-
 const path = require('path');
 
 const app = express();
-app.use(bodyParser.json());
 
-// Serve static files from webapp directory
-app.use(express.static(path.join(__dirname, 'webapp')));
-
-// Initialize Firebase Admin (support serviceAccount JSON via env or local file)
-let firebaseInitialized = false;
-
+// Initialize Firebase Admin from environment secret if present
 if (process.env.SERVICE_ACCOUNT_JSON) {
-  // service account provided as JSON string in env (Render / Railway style)
-  const sa = JSON.parse(process.env.SERVICE_ACCOUNT_JSON);
-  admin.initializeApp({
-    credential: admin.credential.cert(sa)
-  });
-  firebaseInitialized = true;
-} else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-  // local file path - load explicitly with absolute path
-  const fs = require('fs');
-  const credPath = path.resolve(__dirname, process.env.GOOGLE_APPLICATION_CREDENTIALS);
   try {
-    const sa = JSON.parse(fs.readFileSync(credPath, 'utf8'));
-    admin.initializeApp({
-      credential: admin.credential.cert(sa)
-    });
-    firebaseInitialized = true;
-  } catch(e) {
-    console.error('Failed to load service account from', credPath, e.message);
+    const sa = JSON.parse(process.env.SERVICE_ACCOUNT_JSON);
+    admin.initializeApp({ credential: admin.credential.cert(sa) });
+    console.log('Firebase initialized from SERVICE_ACCOUNT_JSON env');
+  } catch (err) {
+    console.error('Failed to parse SERVICE_ACCOUNT_JSON', err);
   }
 } else {
-  console.warn('WARNING: No Firebase credentials found in env. Expect failures if Firestore is used.');
-  // Attempt default initialize (may fail)
-  try { admin.initializeApp(); firebaseInitialized = true; } catch(e){}
+  try {
+    admin.initializeApp();
+    console.log('Firebase initialized with default credentials');
+  } catch (err) {
+    console.warn('Firebase default init failed. Ensure credentials are set.', err);
+  }
 }
 
 const db = admin.firestore();
 
+// Express setup
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Serve static frontend that lives in webapp/
+const webappPath = path.join(__dirname, 'webapp');
+app.use(express.static(webappPath));
+app.get('/', (req, res) => {
+  res.sendFile(path.join(webappPath, 'index.html'));
+});
 
 // Config constants
 const FREE_DAILY_LIMIT = parseInt(process.env.FREE_DAILY_LIMIT || '2', 10);
@@ -127,7 +120,7 @@ function needsDailyReset(lastResetTimestamp) {
 app.get('/sync', requireAdmin, async (req, res) => {
   try {
     if (!BLOGGER_ADMIN_BLOG_ID) {
-      console.error('Missing BLOGGER_ADMIN_BLOG_ID in .env');
+      console.error('Missing BLOGGER_ADMIN_BLOG_ID in secrets');
       return res.status(500).json({ error: 'server_misconfigured', message: 'BLOGGER_ADMIN_BLOG_ID missing' });
     }
 
@@ -198,7 +191,6 @@ app.get('/sync', requireAdmin, async (req, res) => {
     return res.json({ ok: true, synced });
   } catch (err) {
     console.error('Sync failed:', err?.response?.data || err.message || err);
-    // try to return a helpful error message from Google if present
     const msg = (err && err.response && err.response.data) ? err.response.data : (err && err.message) ? err.message : 'unknown';
     return res.status(500).json({ error: 'sync_failed', message: msg });
   }
@@ -333,5 +325,6 @@ app.post('/validate-unlock/:tmdb_id', async (req, res) => {
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 
-const port = process.env.PORT || 5000;
-app.listen(port, '0.0.0.0', () => console.log('Server listening on', port));
+// Start server using env PORT or 5000
+const port = Number(process.env.PORT) || 5000;
+app.listen(port, '0.0.0.0', () => console.log(`Server listening on port ${port}`));

@@ -41,7 +41,9 @@
 
   <script>
   // --- CONFIG (replace placeholders) ---
-  const API_BASE = '';
+  // If running where the backend serves the frontend, use relative path.
+  // If frontend is on Vercel, we will set the absolute URL there.
+  const API_BASE = window.__API_BASE__ || window.location.origin;
   // Monetag placeholders:
   const MONETAG_PUBLISHER = 'MONETAG_PUBLISHER_ID_OR_SNIPPET';
   const ADSTERRA_BANNER_PLACEHOLDER = '<!-- paste Adsterra banner snippet here -->';

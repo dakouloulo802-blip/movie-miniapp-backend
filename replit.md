@@ -2,43 +2,36 @@
 
 A Telegram MiniApp for movie downloads with Firebase/Firestore backend and Blogger API integration.
 
-## Overview
+## Setup Instructions
 
-This is a Node.js Express server that:
-- Serves a static HTML frontend (webapp/index.html)
-- Provides API endpoints for movie listing and unlocking
-- Integrates with Firebase Firestore for data storage
-- Uses Google Blogger API for content synchronization
-- Implements quota-based unlock system with ad monetization support
+The Repl reads FIREBASE credential from `SERVICE_ACCOUNT_JSON` secret.
 
-## Project Structure
+### Required Secrets
 
-```
-/
-├── server.js              # Main Express server
-├── webapp/
-│   └── index.html         # Frontend single-page app
-├── serviceAccountKey.json # Firebase service account credentials
-├── oauth-get-refresh-token.js  # OAuth helper script
-├── package.json           # Node.js dependencies
-└── replit.md              # This file
-```
+Add the following secrets to Replit Secrets (Tools > Secrets or Ctrl+K and search for Secrets):
 
-## Environment Variables
-
-Required secrets (set via Replit Secrets):
+- `SERVICE_ACCOUNT_JSON` - Paste the entire Firebase service account JSON (one long value)
+- `ADMIN_SECRET` - Secret token for admin API endpoints
 - `BLOGGER_CLIENT_ID` - Google OAuth client ID for Blogger
 - `BLOGGER_CLIENT_SECRET` - Google OAuth client secret
-- `BLOGGER_REFRESH_TOKEN` - OAuth refresh token
+- `BLOGGER_REFRESH_TOKEN` - OAuth refresh token for Blogger access
 - `BLOGGER_ADMIN_BLOG_ID` - Admin blog ID for syncing
-- `BLOGGER_PUBLIC_BLOG_ID` - Public blog ID for publishing
-- `ADMIN_SECRET` - Secret token for admin API endpoints
-
-Environment variables:
-- `PORT` - Server port (default: 5000)
-- `GOOGLE_APPLICATION_CREDENTIALS` - Path to Firebase service account JSON
+- `BLOGGER_PUBLIC_BLOG_ID` - Public blog ID for publishing (optional)
 - `FREE_DAILY_LIMIT` - Free unlocks per day (default: 2)
 - `UNLOCK_TTL_SECONDS` - Token validity duration (default: 300)
+
+### Testing
+
+1. Restart the Repl and test `/health` and `/movies` endpoints:
+   ```bash
+   curl -i https://YOUR_REPL_URL/health
+   curl -i https://YOUR_REPL_URL/movies
+   ```
+
+2. To populate movies, create a draft post in Blogger with JSON metadata in an HTML comment, then call:
+   ```bash
+   curl -X GET -H "x-admin-token: YOUR_ADMIN_SECRET" https://YOUR_REPL_URL/sync
+   ```
 
 ## API Endpoints
 
@@ -47,20 +40,23 @@ Environment variables:
 - `GET /movie/:tmdb_id` - Get movie details
 - `POST /unlock/:tmdb_id` - Request unlock token
 - `POST /validate-unlock/:tmdb_id` - Validate token and get download links
-- `GET /sync` - Sync movies from Blogger (admin only)
+- `GET /sync` - Sync movies from Blogger (admin only, requires x-admin-token header)
 - `POST /admin/publish/:tmdb_id` - Publish a movie (admin only)
 
-## Running the App
+## Project Structure
 
-The server runs on port 5000 and serves both the API and static frontend.
-
-```bash
-npm start
+```
+/
+├── server.js              # Main Express server
+├── webapp/
+│   └── index.html         # Frontend single-page app
+├── package.json           # Node.js dependencies
+└── replit.md              # This file
 ```
 
-## Firebase Setup
+## Vercel Frontend (Optional)
 
-The app requires a valid Firebase service account key. If you see authentication errors, you'll need to:
-1. Go to Firebase Console > Project Settings > Service Accounts
-2. Generate a new private key
-3. Replace the content in `serviceAccountKey.json`
+If hosting frontend on Vercel separately, update webapp/index.html and replace the API_BASE line with:
+```js
+const API_BASE = 'https://your-repl-url';
+```

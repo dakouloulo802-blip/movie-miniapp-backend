@@ -1,0 +1,96 @@
+webapp/index.html
+
+Make API_BASE work for two cases:
+
+When frontend is served by the same backend host (relative fetches should work).
+
+When hosted on Vercel (we will update to the Repl URL later manually).
+
+Replace the existing API_BASE line with this safe fallback:
+
+// If running where the backend serves the frontend, use relative path.
+// If frontend is on Vercel, we will set the absolute URL there.
+const API_BASE = window.__API_BASE__ || window.location.origin;
+
+
+Do not hardcode any secret or public backend URL here. Keep it using window.location.origin so the static site served by the backend works immediately.
+
+package.json
+
+Ensure start script exists and runs server.js. If not present, add:
+
+"scripts": {
+  "start": "node server.js"
+}
+
+
+Remove local credential files from runtime if present
+
+If file named serviceAccountKey.json exists in the repo root, delete it from the file system. But do NOT touch git history. Just remove the file from the workspace so it is not accidentally used.
+
+If a .env file exists that contains secrets, delete it from the workspace.
+
+Add a short note file replit.md
+
+Create or update replit.md with these instructions for the user:
+
+The Repl reads FIREBASE credential from SERVICE_ACCOUNT_JSON secret.
+
+Add ADMIN_SECRET and Blogger secrets to Replit Secrets.
+
+Restart the Repl and test /health and /movies endpoints.
+
+To populate movies, create a draft post in Blogger and call POST /sync with Authorization header.
+
+After you make the changes, run npm install if needed and restart the Repl server.
+
+Do not add or change any secrets. After the code changes finish, tell me which files you changed and then I will add the required secrets manually in the Replit UI and test endpoints.
+
+
+---
+
+## What you must do manually after the AI edits
+
+1. Open Replit UI
+2. Find Secrets (Deploy -> Secrets or Tools -> Secrets). If you cannot find it use Ctrl K and search for Secrets.
+3. Add these secrets exactly (values from your Firebase and Blogger setup). Do not paste them in files.
+
+
+
+SERVICE_ACCOUNT_JSON -> paste the entire Firebase service account JSON (one long value)
+ADMIN_SECRET
+BLOGGER_CLIENT_ID
+BLOGGER_CLIENT_SECRET
+BLOGGER_REFRESH_TOKEN
+BLOGGER_ADMIN_BLOG_ID
+BLOGGER_PUBLIC_BLOG_ID (optional)
+FREE_DAILY_LIMIT = 2
+UNLOCK_TTL_SECONDS = 300
+
+
+4. Remove any leftover files with secrets in the file tree (serviceAccountKey.json and .env). You already deleted them but confirm.
+
+5. Restart the Repl by clicking Run.
+
+6. Test from your terminal or Replit Shell:
+
+
+
+curl -i https://YOUR_REPL_URL/health
+curl -i https://YOUR_REPL_URL/movies
+
+
+7. If `/movies` returns empty, add a draft post to Blogger using the JSON comment format and run:
+
+
+
+curl -X POST -H "Authorization: Bearer YOUR_ADMIN_SECRET" https://YOUR_REPL_URL/sync
+
+
+8. When backend works, update your Vercel frontend if you want it to call the Repl backend from Vercel:
+- Edit webapp/index.html and replace the API_BASE line with:
+```js
+const API_BASE = 'https://your-repl-url'; // set this in your repo and push to GitHub
+
+
+Commit and push. Vercel will redeploy.
