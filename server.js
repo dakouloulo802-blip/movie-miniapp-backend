@@ -8,6 +8,11 @@ const { google } = require('googleapis');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
 
+// Vercel Speed Insights integration (client-side only)
+// Note: Speed Insights must be injected early in the application lifecycle
+const { injectSpeedInsights } = require('@vercel/speed-insights');
+injectSpeedInsights();
+
 const app = express();
 app.use(bodyParser.json());
 
