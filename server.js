@@ -10,24 +10,31 @@ const path = require('path');
 const app = express();
 
 // Initialize Firebase Admin from environment secret if present
+let firebaseInitialized = false;
+
 if (process.env.SERVICE_ACCOUNT_JSON) {
   try {
     const sa = JSON.parse(process.env.SERVICE_ACCOUNT_JSON);
     admin.initializeApp({ credential: admin.credential.cert(sa) });
     console.log('Firebase initialized from SERVICE_ACCOUNT_JSON env');
+    firebaseInitialized = true;
   } catch (err) {
-    console.error('Failed to parse SERVICE_ACCOUNT_JSON', err);
-  }
-} else {
-  try {
-    admin.initializeApp();
-    console.log('Firebase initialized with default credentials');
-  } catch (err) {
-    console.warn('Firebase default init failed. Ensure credentials are set.', err);
+    console.error('Failed to parse SERVICE_ACCOUNT_JSON:', err.message);
+    console.error('Make sure SERVICE_ACCOUNT_JSON contains the complete Firebase service account JSON with project_id, private_key, client_email, etc.');
   }
 }
 
-const db = admin.firestore();
+if (!firebaseInitialized) {
+  try {
+    admin.initializeApp();
+    console.log('Firebase initialized with default credentials');
+    firebaseInitialized = true;
+  } catch (err) {
+    console.warn('Firebase default init failed:', err.message);
+  }
+}
+
+const db = firebaseInitialized ? admin.firestore() : null;
 
 // Express setup
 app.use(cors());
@@ -198,6 +205,7 @@ app.get('/sync', requireAdmin, async (req, res) => {
 
 /* Public endpoints */
 app.get('/movies', async (req, res) => {
+  if (!db) return res.status(503).json({ error: 'Database not initialized. Check SERVICE_ACCOUNT_JSON secret.' });
   try {
     const snap = await db.collection('movies').where('published', '==', true).orderBy('title').limit(500).get();
     const out = [];
